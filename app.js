@@ -20,7 +20,8 @@ window.ShukinApp = (() => {
     openId: null, openPid: null, editPaid: false, confirmCancel: false, formErr: "",
     receiver: LS.get("shukin.receiver", ""),
     pending: new Set(), unsub: {}, lastStamp: null,
-    gate: "loading", gateMsg: "", gateInfo: "", importDocs: null, importing: false, importDone: 0, loadTimer: null
+    gate: "loading", gateMsg: "", gateInfo: "", importDocs: null, importing: false, importDone: 0, loadTimer: null,
+    signing: false, whoami: LS.get("shukin.whoami", ""), choosingWho: false
   };
 
   function el(tag, attrs, ...kids) {
@@ -42,10 +43,15 @@ window.ShukinApp = (() => {
   const hm = iso => { const d = new Date(iso); if (isNaN(d)) return ""; return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
   const plain = s => String(s || "").replace(/[\s　]/g, "");
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const who = () => ({ uid: S.me ? S.me.uid : null, name: S.me ? (S.me.name || S.me.email || "") : "" });
-
   const kanjiList = () => (S.config && Array.isArray(S.config.collectors)) ? S.config.collectors : [];
   const kanjiName = k => { if (!k) return ""; const f = kanjiList().find(x => x.key === k); return f ? f.name : k; };
+  // 幹事で共有するパスワードのアカウントで入っているか
+  const isShared = () => !!(S.me && S.A && S.A.sharedEmail && S.me.email && S.me.email.toLowerCase() === S.A.sharedEmail.toLowerCase());
+  const needWho = () => isShared() && !kanjiList().some(k => k.key === S.whoami);
+  const who = () => ({
+    uid: S.me ? S.me.uid : null,
+    name: !S.me ? "" : isShared() ? `${kanjiName(S.whoami) || "幹事"}（共通）` : (S.me.name || S.me.email || "")
+  });
   const curPeriod = () => S.periods.find(p => p.id === S.pid) || null;
   function itemsOf() {
     const p = curPeriod();
@@ -91,9 +97,27 @@ window.ShukinApp = (() => {
   function renderAcct() {
     const a = $("#acct");
     if (!S.me) { a.hidden = true; return; }
-    $("#acctName").textContent = S.me.name || S.me.email || "";
+    const shared = isShared();
+    $("#acctName").textContent = shared ? (kanjiName(S.whoami) ? `${kanjiName(S.whoami)}（共通）` : "共通アカウント") : (S.me.name || S.me.email || "");
     $("#acctName").title = S.me.email || "";
+    $("#whoBtn").hidden = !shared;
+    a.classList.toggle("shared", shared);
     a.hidden = false;
+  }
+  function enterApp() {
+    S.choosingWho = false;
+    showApp(); choosePeriod(); renderAll(); renderAcct();
+  }
+  // 期のデータが届いたとき：名前の選択が要るか、名簿を出すかを決める
+  function afterData() {
+    if (S.gate === "whoami") { if (!needWho() && !S.choosingWho) enterApp(); else renderGate(); return; }
+    if (needWho()) { showGate("whoami"); return; }
+    if (S.gate !== "app") enterApp(); else { choosePeriod(); renderAll(); }
+  }
+  function chooseWho(key) {
+    S.whoami = key; LS.set("shukin.whoami", key);
+    S.receiver = key; LS.set("shukin.receiver", key);
+    enterApp();
   }
   function renderGate() {
     const g = $("#gate");
@@ -110,11 +134,28 @@ window.ShukinApp = (() => {
         el("p", {}, "通信状態を確かめて、ページを開き直してください。"),
         S.gateMsg ? el("p", { class: "small" }, S.gateMsg) : null];
     } else if (k === "signin") {
-      kids = [el("h2", {}, "幹事の Google アカウントでサインインしてください"),
-        el("p", {}, "このページは登録された幹事だけが使えます。"),
-        el("button", { type: "button", class: "btn primary", onclick: doSignIn }, "Google でサインイン"),
+      const hasPw = !!(S.A && S.A.sharedEmail);
+      const google = el("button", { type: "button", class: hasPw ? "btn" : "btn primary", onclick: doSignIn }, "Google でサインイン");
+      kids = [el("h2", {}, hasPw ? "パスワードを入れてください" : "幹事の Google アカウントでサインインしてください"),
+        el("p", {}, hasPw ? "幹事で共有しているパスワードで入ります。" : "このページは登録された幹事だけが使えます。"),
+        hasPw ? el("form", { class: "rec", novalidate: true, onsubmit: ev => { ev.preventDefault(); doPasswordSignIn(); } },
+          el("label", { class: "field" }, el("span", { class: "flabel" }, "パスワード"),
+            el("input", { id: "pw", type: "password", autocomplete: "current-password", enterkeyhint: "go" })),
+          el("label", { class: "check" },
+            el("input", { id: "remember", type: "checkbox", checked: LS.get("shukin.remember", "1") === "1" }),
+            el("span", {}, "このスマホで覚えておく（次からは入力なしで開きます）")),
+          el("button", { type: "submit", class: "btn primary", disabled: S.signing }, S.signing ? "確かめています…" : "入る")) : null,
         S.gateMsg ? el("p", { class: "ferr", role: "alert" }, S.gateMsg) : null,
-        el("p", { class: "small" }, "LINE などのアプリの中で開いた画面ではサインインできません。Safari か Chrome で開いてください。")];
+        hasPw ? el("details", { class: "alt" }, el("summary", {}, "Google アカウントで入る（会計担当）"), google) : google,
+        el("p", { class: "small" }, "LINE などのアプリの中で開いた画面では入れないことがあります。Safari か Chrome で開いてください。")];
+    } else if (k === "whoami") {
+      const list = kanjiList();
+      kids = [el("h2", {}, "あなたはどの幹事ですか"),
+        el("p", {}, "共通のパスワードで入っているので、記録に残す名前を選んでください。このスマホで覚えておきます。"),
+        list.length
+          ? el("div", { class: "whogrid" }, list.map(x => el("button", { type: "button", class: "btn" + (x.key === S.whoami ? " primary" : ""), onclick: () => chooseWho(x.key) }, x.name)))
+          : el("p", { class: "hint" }, "幹事の一覧を読み込んでいます…"),
+        S.choosingWho && !needWho() ? el("button", { type: "button", class: "btn", onclick: enterApp }, "変えずに戻る") : null];
     } else if (k === "denied") {
       kids = [el("h2", {}, "このアカウントでは開けません"),
         el("p", {}, "サインイン中のアカウント："),
@@ -159,6 +200,34 @@ window.ShukinApp = (() => {
       S.gateMsg = m;
       if (S.gate === "signin") renderGate();
     });
+  }
+
+  async function doPasswordSignIn() {
+    if (!S.A || S.signing) return;
+    const pw = ($("#pw") || {}).value || "";
+    const remember = !!($("#remember") || {}).checked;
+    if (!pw) { S.gateMsg = "パスワードを入れてください。"; renderGate(); return; }
+    LS.set("shukin.remember", remember ? "1" : "0");
+    S.signing = true; S.gateMsg = ""; renderGate();
+    try {
+      await S.A.signInPassword(pw, remember);
+    } catch (e) {
+      const c = (e && e.code) || "";
+      S.gateMsg = ({
+        "auth/invalid-credential": "パスワードが違います。",
+        "auth/invalid-login-credentials": "パスワードが違います。",
+        "auth/wrong-password": "パスワードが違います。",
+        "auth/missing-password": "パスワードを入れてください。",
+        "auth/user-not-found": "共通アカウントがまだ作られていません。会計担当に確認してください。",
+        "auth/user-disabled": "共通アカウントが止められています。会計担当に確認してください。",
+        "auth/too-many-requests": "何度も間違えたため、一時的に止まっています。しばらく待ってから入れてください。",
+        "auth/operation-not-allowed": "Firebase でパスワードでのログインが有効になっていません。",
+        "auth/network-request-failed": "通信できませんでした。電波の良いところで、もう一度押してください。"
+      })[c] || `入れませんでした（${c || "不明なエラー"}）。`;
+    } finally {
+      S.signing = false;
+      if (S.gate === "signin") renderGate();
+    }
   }
 
   function onImportFile(ev) {
@@ -657,11 +726,15 @@ window.ShukinApp = (() => {
     S.loadTimer = setTimeout(() => {
       if (!S.chargesReady && S.gate !== "denied") setBanner("warn", "記録データにまだ接続できません。通信状態を確かめてください。つながりしだい表示します。");
     }, 10000);
-    S.unsub.config = S.A.watchDoc("config/app", d => { S.config = d.exists ? d.data() : null; renderAll(); }, onErr);
+    S.unsub.config = S.A.watchDoc("config/app", d => {
+      S.config = d.exists ? d.data() : null;
+      renderAcct();
+      if (S.periods.length) afterData(); else renderAll();
+    }, onErr);
     S.unsub.periods = S.A.watchCol("periods", null, (docs, meta) => {
       S.periods = docs.map(d => Object.assign({ id: d.id }, d.data())).sort((a, b) => (a.order || 0) - (b.order || 0));
       if (!meta.fromCache) S.periodsReady = true;
-      if (S.periods.length) { showApp(); choosePeriod(); renderAll(); }
+      if (S.periods.length) afterData();
       else if (S.periodsReady && S.gate !== "import") { clearTimeout(S.loadTimer); setBanner("", ""); showGate("import"); }
     }, onErr);
   }
@@ -690,6 +763,7 @@ window.ShukinApp = (() => {
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.openId) closeSheet(); });
   $("#csvBtn").addEventListener("click", exportCsv);
   $("#signOutBtn").addEventListener("click", () => { if (S.A) Promise.resolve(S.A.signOut()).catch(() => {}); });
+  $("#whoBtn").addEventListener("click", () => { if (!isShared()) return; S.choosingWho = true; showGate("whoami"); });
   setTimeout(() => { if (!S.started) loadFailed("15 秒待っても部品が届きませんでした。"); }, 15000);
 
   return { start, notConfigured, loadFailed };

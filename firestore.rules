@@ -1,14 +1,21 @@
 rules_version = '2';
 
-// 幹事の一覧（access/kanji の emails）に入っている Google アカウントだけが読み書きできる。
+// 幹事の一覧（access/kanji の emails）に入っているアカウントだけが読み書きできる。
+// 認めるのは「メールアドレスを確認済みの Google アカウント」と「幹事で共有するパスワードのアカウント 1 つ」だけ。
 // 幹事の一覧そのものはアプリからは読めず、Firebase コンソールでだけ編集する。
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function verifiedOrShared() {
+      return request.auth.token.email_verified == true
+        || (request.auth.token.firebase.sign_in_provider == 'password'
+            && request.auth.token.email == 'kanji@otyakai-kaikei.firebaseapp.com');
+    }
+
     function isKanji() {
       return request.auth != null
-        && request.auth.token.email_verified == true
-        && exists(/databases/$(database)/documents/access/kanji)
+        && request.auth.token.email is string
+        && verifiedOrShared()
         && request.auth.token.email.lower() in get(/databases/$(database)/documents/access/kanji).data.emails;
     }
 

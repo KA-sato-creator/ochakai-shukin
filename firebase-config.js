@@ -8,3 +8,7 @@ export const firebaseConfig = {
   messagingSenderId: "247903164303",
   appId: "1:247903164303:web:905b885eb31ef4ba421dfa"
 };
+
+// 幹事で共有するパスワードのアカウント（メールは受信しない名前だけのアドレス）。
+// パスワードはここには書かない。Firebase コンソールの Authentication で設定する。
+export const sharedLoginEmail = "kanji@otyakai-kaikei.firebaseapp.com";

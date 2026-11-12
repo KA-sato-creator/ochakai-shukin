@@ -50,7 +50,7 @@ button{font:inherit;color:inherit}
 .acct{flex:none;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);max-width:50%;margin-left:auto}
 .acct span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .acct button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:4px 9px;font-size:12px;cursor:pointer}
-@media (max-width:480px){.acct span{display:none}}
+@media (max-width:480px){.acct:not(.shared) span{display:none}.acct.shared span{max-width:7em}}
 .tabs{flex:1 1 auto;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .ptab{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 14px;font-size:14px;cursor:pointer}
@@ -70,6 +70,14 @@ main.wrap{padding-block:14px calc(120px + env(safe-area-inset-bottom,0px));displ
 .gate .small{font-size:12.5px}
 .gate input[type=file]{font-size:14px;max-width:100%}
 .gate .sum{background:var(--paper);border-radius:10px;padding:10px 12px;font-size:13.5px;color:var(--ink)}
+.gate .check{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink-2);cursor:pointer}
+.gate .check input{width:18px;height:18px;margin:2px 0 0;flex:none;accent-color:var(--matcha)}
+.gate details.alt{border-top:1px solid var(--line);padding-top:10px;display:grid;gap:10px}
+.gate details.alt summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+.gate details.alt .btn{margin-top:10px;width:100%}
+.whogrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.whogrid .btn{font-size:16px;min-height:52px}
+.whogrid .btn.primary{width:auto;font-size:16px}
 
 /* 集計 */
 .summary{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:10px}
@@ -202,7 +210,7 @@ details.edit .fgrid{margin-top:10px}
     </div>
     <div class="subbar">
       <nav class="tabs" id="periodTabs" aria-label="集金の期"></nav>
-      <div class="acct" id="acct" hidden><span id="acctName"></span><button type="button" id="signOutBtn">サインアウト</button></div>
+      <div class="acct" id="acct" hidden><span id="acctName"></span><button type="button" id="whoBtn" hidden>切替</button><button type="button" id="signOutBtn">サインアウト</button></div>
     </div>
   </div>
 </header>
@@ -266,7 +274,7 @@ details.edit .fgrid{margin-top:10px}
 <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shName" hidden></section>
 <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button type="button" id="toastBtn" hidden>取り消す</button></div>
 
-<script src="app.js?v=20261112b"></script>
-<script type="module" src="firebase.js?v=20261112b"></script>
+<script src="app.js?v=20261112c"></script>
+<script type="module" src="firebase.js?v=20261112c"></script>
 </body>
 </html>
