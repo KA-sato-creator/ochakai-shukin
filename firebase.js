@@ -1,6 +1,6 @@
 // Firebase（Authentication と Firestore）を app.js につなぐ。
 // SDK は Google の配信元から読み込む。設定値は firebase-config.js。
-import { firebaseConfig, sharedLoginEmail } from "./firebase-config.js?v=20261112c";
+import { firebaseConfig } from "./firebase-config.js?v=20261112d";
 
 const SDK = "https://www.gstatic.com/firebasejs/10.12.2";
 const App = window.ShukinApp;
@@ -27,15 +27,18 @@ if (!firebaseConfig || !firebaseConfig.apiKey || !firebaseConfig.projectId) {
     const opts = { includeMetadataChanges: true };
 
     App.start({
-      sharedEmail: sharedLoginEmail || "",
-      onAuth: cb => authM.onAuthStateChanged(auth, u => cb(u ? { uid: u.uid, name: u.displayName || "", email: u.email || "" } : null)),
-      // クリックの中でそのまま呼ぶ（ポップアップを止められないように）
+      passwordLogin: true,
+      onAuth: cb => authM.onAuthStateChanged(auth, u => cb(u ? {
+        uid: u.uid, name: u.displayName || "", email: u.email || "",
+        provider: (u.providerData && u.providerData[0] && u.providerData[0].providerId) || ""
+      } : null)),
+      // クリックの中でそのまま呼ぶ（ポップアップを止められないように）。今は画面に出していない
       signIn: () => authM.signInWithPopup(auth, provider),
-      // 幹事で共有するパスワードで入る。remember が false のときはタブを閉じると入り直し
-      signInPassword: async (password, remember) => {
+      // 共通アカウントのアドレスとパスワードで入る。remember が false のときはタブを閉じると入り直し
+      signInPassword: async (email, password, remember) => {
         try {
           await authM.setPersistence(auth, remember ? authM.browserLocalPersistence : authM.browserSessionPersistence);
-          return await authM.signInWithEmailAndPassword(auth, sharedLoginEmail, password);
+          return await authM.signInWithEmailAndPassword(auth, email, password);
         } catch (e) { throw { code: (e && e.code) || "unknown", message: e && e.message }; }
       },
       signOut: () => authM.signOut(auth),

@@ -46,7 +46,7 @@ window.ShukinApp = (() => {
   const kanjiList = () => (S.config && Array.isArray(S.config.collectors)) ? S.config.collectors : [];
   const kanjiName = k => { if (!k) return ""; const f = kanjiList().find(x => x.key === k); return f ? f.name : k; };
   // 幹事で共有するパスワードのアカウントで入っているか
-  const isShared = () => !!(S.me && S.A && S.A.sharedEmail && S.me.email && S.me.email.toLowerCase() === S.A.sharedEmail.toLowerCase());
+  const isShared = () => !!(S.me && S.me.provider === "password");
   const needWho = () => isShared() && !kanjiList().some(k => k.key === S.whoami);
   const who = () => ({
     uid: S.me ? S.me.uid : null,
@@ -134,19 +134,21 @@ window.ShukinApp = (() => {
         el("p", {}, "通信状態を確かめて、ページを開き直してください。"),
         S.gateMsg ? el("p", { class: "small" }, S.gateMsg) : null];
     } else if (k === "signin") {
-      const hasPw = !!(S.A && S.A.sharedEmail);
-      const google = el("button", { type: "button", class: hasPw ? "btn" : "btn primary", onclick: doSignIn }, "Google でサインイン");
-      kids = [el("h2", {}, hasPw ? "パスワードを入れてください" : "幹事の Google アカウントでサインインしてください"),
-        el("p", {}, hasPw ? "幹事で共有しているパスワードで入ります。" : "このページは登録された幹事だけが使えます。"),
+      const hasPw = !!(S.A && S.A.passwordLogin);
+      const savedMail = LS.get("shukin.loginEmail", "");
+      kids = [el("h2", {}, hasPw ? (savedMail ? "パスワードを入れてください" : "アカウントとパスワードを入れてください") : "幹事の Google アカウントでサインインしてください"),
+        el("p", {}, hasPw ? (savedMail ? "幹事で共有しているパスワードで入ります。" : "幹事で共有しているアカウントのメールアドレスとパスワードで入ります。アドレスは、このスマホで覚えておきます。") : "このページは登録された幹事だけが使えます。"),
         hasPw ? el("form", { class: "rec", novalidate: true, onsubmit: ev => { ev.preventDefault(); doPasswordSignIn(); } },
+          el("label", { class: "field" }, el("span", { class: "flabel" }, "アカウント（メールアドレス）"),
+            el("input", { id: "loginEmail", type: "email", autocomplete: "username", inputmode: "email", autocapitalize: "off", spellcheck: "false", value: savedMail })),
           el("label", { class: "field" }, el("span", { class: "flabel" }, "パスワード"),
             el("input", { id: "pw", type: "password", autocomplete: "current-password", enterkeyhint: "go" })),
           el("label", { class: "check" },
             el("input", { id: "remember", type: "checkbox", checked: LS.get("shukin.remember", "1") === "1" }),
             el("span", {}, "このスマホで覚えておく（次からは入力なしで開きます）")),
-          el("button", { type: "submit", class: "btn primary", disabled: S.signing }, S.signing ? "確かめています…" : "入る")) : null,
+          el("button", { type: "submit", class: "btn primary", disabled: S.signing }, S.signing ? "確かめています…" : "入る"))
+          : el("button", { type: "button", class: "btn primary", onclick: doSignIn }, "Google でサインイン"),
         S.gateMsg ? el("p", { class: "ferr", role: "alert" }, S.gateMsg) : null,
-        hasPw ? el("details", { class: "alt" }, el("summary", {}, "Google アカウントで入る（会計担当）"), google) : google,
         el("p", { class: "small" }, "LINE などのアプリの中で開いた画面では入れないことがあります。Safari か Chrome で開いてください。")];
     } else if (k === "whoami") {
       const list = kanjiList();
@@ -204,21 +206,25 @@ window.ShukinApp = (() => {
 
   async function doPasswordSignIn() {
     if (!S.A || S.signing) return;
+    const email = String(($("#loginEmail") || {}).value || "").trim().toLowerCase();
     const pw = ($("#pw") || {}).value || "";
     const remember = !!($("#remember") || {}).checked;
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { S.gateMsg = "アカウントのメールアドレスを入れてください。"; renderGate(); return; }
     if (!pw) { S.gateMsg = "パスワードを入れてください。"; renderGate(); return; }
     LS.set("shukin.remember", remember ? "1" : "0");
+    LS.set("shukin.loginEmail", email);
     S.signing = true; S.gateMsg = ""; renderGate();
     try {
-      await S.A.signInPassword(pw, remember);
+      await S.A.signInPassword(email, pw, remember);
     } catch (e) {
       const c = (e && e.code) || "";
       S.gateMsg = ({
-        "auth/invalid-credential": "パスワードが違います。",
-        "auth/invalid-login-credentials": "パスワードが違います。",
-        "auth/wrong-password": "パスワードが違います。",
+        "auth/invalid-credential": "アドレスかパスワードが違います。",
+        "auth/invalid-login-credentials": "アドレスかパスワードが違います。",
+        "auth/wrong-password": "アドレスかパスワードが違います。",
+        "auth/invalid-email": "メールアドレスの形が正しくありません。",
         "auth/missing-password": "パスワードを入れてください。",
-        "auth/user-not-found": "共通アカウントがまだ作られていません。会計担当に確認してください。",
+        "auth/user-not-found": "アドレスかパスワードが違います。",
         "auth/user-disabled": "共通アカウントが止められています。会計担当に確認してください。",
         "auth/too-many-requests": "何度も間違えたため、一時的に止まっています。しばらく待ってから入れてください。",
         "auth/operation-not-allowed": "Firebase でパスワードでのログインが有効になっていません。",
