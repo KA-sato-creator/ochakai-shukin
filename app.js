@@ -20,7 +20,7 @@ window.ShukinApp = (() => {
     openId: null, openPid: null, editPaid: false, confirmCancel: false, formErr: "",
     receiver: LS.get("shukin.receiver", ""),
     pending: new Set(), unsub: {}, lastStamp: null,
-    gate: "loading", gateMsg: "", importDocs: null, importing: false, loadTimer: null
+    gate: "loading", gateMsg: "", gateInfo: "", importDocs: null, importing: false, importDone: 0, loadTimer: null
   };
 
   function el(tag, attrs, ...kids) {
@@ -73,7 +73,10 @@ window.ShukinApp = (() => {
     b.className = "banner " + kind; b.dataset.kind = kind; b.textContent = text; b.hidden = false;
   }
   function showGate(kind, msg) {
-    S.gate = kind; S.gateMsg = msg || "";
+    // 同じ入口を出し直すときは、出ているエラー表示や選んだファイルを消さない
+    if (S.gate !== kind) { S.gateMsg = msg || ""; S.gateInfo = ""; }
+    else if (msg) S.gateMsg = msg;
+    S.gate = kind;
     $("#appView").hidden = true;
     $("#periodTabs").replaceChildren();
     if (S.openId) closeSheet();
@@ -130,7 +133,8 @@ window.ShukinApp = (() => {
         el("label", { class: "field" }, el("span", { class: "flabel" }, "取り込むファイル"),
           el("input", { id: "importFile", type: "file", accept: ".json,application/json", onchange: onImportFile })),
         sumBox,
-        docs ? el("button", { type: "button", class: "btn primary", disabled: S.importing, onclick: doImport }, S.importing ? "取り込んでいます…" : "取り込む") : null,
+        docs ? el("button", { type: "button", class: "btn primary", disabled: S.importing, onclick: doImport }, S.importing ? `取り込んでいます… ${S.importDone || 0} / ${docs.length}` : "取り込む") : null,
+        S.gateInfo ? el("p", { class: "hint", role: "status" }, S.gateInfo) : null,
         S.gateMsg ? el("p", { class: "ferr", role: "alert" }, S.gateMsg) : null];
     } else {
       kids = [el("h2", {}, "表示できません")];
@@ -180,13 +184,16 @@ window.ShukinApp = (() => {
   }
   async function doImport() {
     if (!S.importDocs || S.importing) return;
-    S.importing = true; S.gateMsg = ""; renderGate();
+    S.importing = true; S.importDone = 0; S.gateMsg = ""; S.gateInfo = ""; renderGate();
     try {
-      await S.A.importDocs(S.importDocs);
+      await S.A.importDocs(S.importDocs, n => { S.importDone = n; if (S.gate === "import") renderGate(); });
       S.importDocs = null;
+      S.gateInfo = "取り込みました。名簿を読み込んでいます…";
       toast("取り込みました");
     } catch (e) {
+      console.error("import failed", e);
       S.gateMsg = (e && e.code === "permission-denied") ? "取り込む権限がありません。幹事の一覧にこのアカウントが入っているか確かめてください。" : `取り込めませんでした（${(e && e.code) || "不明"}）。`;
+      if (S.importDone) S.gateMsg += `（${S.importDone} 件までは書き込み済みです。もう一度「取り込む」を押すと続きから上書きします）`;
     } finally {
       S.importing = false;
       if (S.gate === "import") renderGate();
@@ -655,7 +662,7 @@ window.ShukinApp = (() => {
       S.periods = docs.map(d => Object.assign({ id: d.id }, d.data())).sort((a, b) => (a.order || 0) - (b.order || 0));
       if (!meta.fromCache) S.periodsReady = true;
       if (S.periods.length) { showApp(); choosePeriod(); renderAll(); }
-      else if (S.periodsReady) { clearTimeout(S.loadTimer); setBanner("", ""); showGate("import"); }
+      else if (S.periodsReady && S.gate !== "import") { clearTimeout(S.loadTimer); setBanner("", ""); showGate("import"); }
     }, onErr);
   }
 

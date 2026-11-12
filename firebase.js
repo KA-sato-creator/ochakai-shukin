@@ -40,11 +40,13 @@ if (!firebaseConfig || !firebaseConfig.apiKey || !firebaseConfig.projectId) {
       },
       update: (path, data) => fsM.updateDoc(fsM.doc(db, path), data).catch(e => { throw norm(e); }),
       add: (path, data) => fsM.addDoc(fsM.collection(db, path), data).catch(e => { throw norm(e); }),
-      importDocs: async docs => {
-        for (let i = 0; i < docs.length; i += 400) {
+      // ルールの確認回数の上限（まとめ書きは 1 回あたり 20 件まで）に当たらないよう、5 件ずつ送る
+      importDocs: async (docs, onProgress) => {
+        for (let i = 0; i < docs.length; i += 5) {
           const b = fsM.writeBatch(db);
-          for (const d of docs.slice(i, i + 400)) b.set(fsM.doc(db, d.path), d.data);
+          for (const d of docs.slice(i, i + 5)) b.set(fsM.doc(db, d.path), d.data);
           try { await b.commit(); } catch (e) { throw norm(e); }
+          if (onProgress) onProgress(Math.min(i + 5, docs.length), docs.length);
         }
       }
     });
