@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// 幹事の一覧（access/kanji の emails）に入っている Google アカウントだけが読み書きできる。
+// 幹事の一覧そのものはアプリからは読めず、Firebase コンソールでだけ編集する。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isKanji() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/access/kanji)
+        && request.auth.token.email.lower() in get(/databases/$(database)/documents/access/kanji).data.emails;
+    }
+
+    match /access/{doc} {
+      allow read, write: if false;
+    }
+
+    match /config/{doc} {
+      allow read, create, update: if isKanji();
+    }
+
+    match /periods/{pid} {
+      allow read, create, update: if isKanji();
+
+      match /charges/{mid} {
+        allow read, create, update: if isKanji();
+      }
+    }
+
+    // 記録の履歴は追記だけ（あとから書き換え・削除できない）
+    match /log/{id} {
+      allow read, create: if isKanji();
+    }
+  }
+}

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>お茶会 会費集金</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&family=BIZ+UDPGothic:wght@400;700&family=Zen+Old+Mincho:wght@700&display=swap">
+<style>
+/* Layout: 一列の集金帳。上に期の切替と集計、下に区分ごとの部員の行。行をタップすると下から記録シートが開く */
+:root{
+  --paper:#F3F6F3; --card:#FFFFFF; --ink:#17201B; --ink-2:#56625B; --line:#D9E0DA;
+  --matcha:#2C6A4C; --on-matcha:#FFFFFF; --matcha-soft:#E1EEE6;
+  --shu:#C0392B; --shu-soft:#FBE7E4; --kin:#8F5D0E; --kin-soft:#F6ECDA;
+  --scrim:rgba(16,24,20,.42); --shadow:0 -8px 30px rgba(16,24,20,.18);
+  --font-ui:"BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --font-num:"BIZ UDGothic","Consolas","Menlo",ui-monospace,monospace;
+  --font-seal:"Zen Old Mincho","Yu Mincho","Hiragino Mincho ProN",serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0F1512; --card:#172019; --ink:#E6ECE8; --ink-2:#9AA79F; --line:#2B362F;
+    --matcha:#79C29D; --on-matcha:#0C1912; --matcha-soft:#1B3127;
+    --shu:#EE7A6C; --shu-soft:#3A201C; --kin:#E3AB52; --kin-soft:#382B15;
+    --scrim:rgba(0,0,0,.6); --shadow:0 -8px 30px rgba(0,0,0,.5); color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-ui);font-size:15px;line-height:1.6}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--paper)}
+[hidden]{display:none!important}
+.wrap{max-width:760px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.num{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--matcha);outline-offset:2px}
+
+/* ヘッダー */
+.top{position:sticky;top:0;z-index:6;background:var(--paper);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.top .wrap{padding-block:12px 10px;display:grid;gap:10px}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.brand>div{min-width:0;flex:1}
+.seal{flex:none;width:38px;height:38px;border-radius:6px;background:var(--matcha);color:var(--on-matcha);display:grid;place-items:center;font-family:var(--font-seal);font-size:21px;line-height:1}
+.brand h1{margin:0;font-size:18px;line-height:1.3;font-weight:700;text-wrap:balance}
+.brand p{margin:0;font-size:12.5px;color:var(--ink-2)}
+.subbar{display:flex;align-items:center;gap:10px;min-width:0}
+.acct{flex:none;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);max-width:50%;margin-left:auto}
+.acct span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.acct button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:4px 9px;font-size:12px;cursor:pointer}
+@media (max-width:480px){.acct span{display:none}}
+.tabs{flex:1 1 auto;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.ptab{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:5px 14px;font-size:14px;cursor:pointer}
+.ptab.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+main.wrap{padding-block:14px calc(120px + env(safe-area-inset-bottom,0px));display:grid;gap:14px}
+#appView{display:grid;gap:14px}
+.banner{border-radius:10px;padding:10px 12px;font-size:13.5px;border:1px solid var(--line);background:var(--card)}
+.banner.warn{background:var(--kin-soft);border-color:transparent}
+.banner.err{background:var(--shu-soft);border-color:transparent}
+
+/* 入口（サインイン・取り込みなど） */
+.gate{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 20px;display:grid;gap:12px;max-width:520px;width:100%;margin:8px auto 0}
+.gate h2{margin:0;font-size:18px;line-height:1.4;text-wrap:balance}
+.gate p{margin:0;font-size:14px;color:var(--ink-2)}
+.gate .mail{font-family:var(--font-num);color:var(--ink);word-break:break-all}
+.gate .small{font-size:12.5px}
+.gate input[type=file]{font-size:14px;max-width:100%}
+.gate .sum{background:var(--paper);border-radius:10px;padding:10px 12px;font-size:13.5px;color:var(--ink)}
+
+/* 集計 */
+.summary{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;gap:10px}
+.sum-row{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 10px}
+.lbl{font-size:12.5px;color:var(--ink-2);letter-spacing:.06em}
+.big{font-size:28px;font-weight:700;line-height:1.1}
+.unit{font-size:14px;margin-left:2px}
+.of{font-size:13px;color:var(--ink-2)}
+.bar{height:10px;border-radius:99px;background:var(--matcha-soft);overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--matcha);border-radius:99px;transition:width .4s ease}
+.sum-sub{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:13.5px}
+.sum-sub b{font-weight:700}
+.left-amt{color:var(--shu)}
+details.breakdown summary{cursor:pointer;font-size:13.5px;color:var(--matcha);list-style:none;padding:2px 0}
+details.breakdown summary::-webkit-details-marker{display:none}
+details.breakdown summary::before{content:"▸ ";display:inline-block;transition:transform .2s}
+details.breakdown[open] summary::before{transform:rotate(90deg)}
+.bd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:8px}
+.tbl-wrap{overflow-x:auto;min-width:0}
+table.mini{width:100%;border-collapse:collapse;font-size:13.5px}
+table.mini caption{text-align:left;font-size:12.5px;color:var(--ink-2);padding-bottom:4px;letter-spacing:.04em}
+table.mini th,table.mini td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+table.mini th:first-child,table.mini td:first-child{text-align:left}
+table.mini thead th{font-weight:400;color:var(--ink-2);font-size:12px}
+
+/* 絞り込み */
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
+.seg button{border:0;background:transparent;padding:7px 14px;font-size:14px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--matcha);color:var(--on-matcha)}
+.search{flex:1 1 160px;min-width:0;font-size:16px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+
+/* 名簿 */
+.group{display:grid;gap:6px}
+.group h2{margin:6px 2px 0;font-size:13px;font-weight:700;color:var(--ink-2);letter-spacing:.08em;display:flex;justify-content:space-between;gap:8px}
+.group h2 span{font-weight:400}
+.rows{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;align-items:center;gap:10px;width:100%;text-align:left;background:var(--card);border:0;padding:10px 12px 10px 14px;cursor:pointer;min-height:58px}
+.row+.row{border-top:1px solid var(--line)}
+.row:hover{background:var(--matcha-soft)}
+.row.none .who b{color:var(--ink-2);font-weight:400}
+.who{min-width:0;display:grid;gap:3px}
+.who b{font-size:16px;font-weight:700;line-height:1.3}
+.who .no{font-size:11.5px;color:var(--ink-2);margin-right:6px;font-weight:400}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:11.5px;line-height:1.5;padding:0 7px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+.chip.due{color:var(--ink);border-color:var(--ink-2)}
+.chip.note{background:var(--kin-soft);border-color:transparent;color:var(--kin)}
+.chip.abs{border-style:dashed}
+.amt{text-align:right;line-height:1.25}
+.amt .v{font-size:16px;font-weight:700}
+.amt .s{display:block;font-size:11.5px;color:var(--ink-2)}
+.amt.unpaid .s{color:var(--shu)}
+.amt .wait{display:block;font-size:11px;color:var(--kin)}
+.stamp{width:36px;height:36px;border:2px solid var(--shu);color:var(--shu);border-radius:50%;display:grid;place-items:center;font-family:var(--font-seal);font-weight:700;font-size:18px;line-height:1;transform:rotate(-12deg);justify-self:center}
+.stamp.part{border-style:dashed;font-size:11px;font-family:var(--font-ui)}
+.stamp.big{width:58px;height:58px;font-size:30px;border-width:3px}
+.stamp.pop{animation:pop .35s ease-out}
+@keyframes pop{0%{transform:rotate(-12deg) scale(1.6);opacity:0}100%{transform:rotate(-12deg) scale(1);opacity:1}}
+.empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:22px 18px;text-align:center;color:var(--ink-2);font-size:14px}
+.empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+
+/* 履歴・保存 */
+.history h2,.foot h2{font-size:14px;margin:6px 2px 6px;letter-spacing:.06em}
+.log{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+.log li{padding:8px 12px;font-size:13px;display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px}
+.log li+li{border-top:1px solid var(--line)}
+.log time{color:var(--ink-2);font-family:var(--font-num);font-size:12px;padding-top:1px}
+.log .act{font-weight:700}
+.log .act.undo{color:var(--shu)}
+.log .by{grid-column:2;color:var(--ink-2);font-size:12px}
+.foot{display:grid;gap:8px}
+.foot p{margin:0;font-size:12.5px;color:var(--ink-2)}
+.btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 14px;font-size:14.5px;cursor:pointer;min-height:44px}
+.btn.primary{background:var(--matcha);border-color:var(--matcha);color:var(--on-matcha);font-weight:700;font-size:16px;min-height:52px;width:100%}
+.btn.danger{color:var(--shu);border-color:var(--shu)}
+.btn.danger.solid{background:var(--shu);color:var(--card)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* 記録シート */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;max-height:90vh;max-height:90dvh;overflow-y:auto;z-index:21;background:var(--card);border-radius:18px 18px 0 0;box-shadow:var(--shadow);padding:16px max(18px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px));display:grid;gap:14px;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+.sh-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.sh-head p{margin:0;font-size:12.5px;color:var(--ink-2)}
+.sh-head h2{margin:0;font-size:22px;line-height:1.3}
+.x{border:0;background:var(--paper);width:40px;height:40px;border-radius:50%;font-size:20px;cursor:pointer;flex:none}
+.bill{border:1px solid var(--line);border-radius:12px;padding:6px 14px}
+.bill .li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:6px 0;font-size:14.5px}
+.bill .li+.li{border-top:1px dashed var(--line)}
+.bill .li small{color:var(--ink-2);margin-left:6px}
+.bill .tot{font-weight:700;border-top:1px solid var(--ink-2)!important}
+.bill .memo{font-size:12.5px;color:var(--kin);padding:2px 0 6px}
+.paidbox{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:center;background:var(--shu-soft);border-radius:12px;padding:12px 14px}
+.paidbox b{font-size:17px}
+.paidbox p{margin:0;font-size:13px}
+.paidbox .by{color:var(--ink-2);font-size:12px}
+.rowbtns{display:flex;flex-wrap:wrap;gap:8px}
+.rowbtns .btn{flex:1 1 140px}
+.confirm{border:1px solid var(--shu);border-radius:12px;padding:12px;display:grid;gap:10px;font-size:14px}
+form.rec{display:grid;gap:12px}
+fieldset{border:0;margin:0;padding:0;display:grid;gap:6px;min-width:0}
+legend,.flabel{font-size:12.5px;color:var(--ink-2);letter-spacing:.05em;padding:0;margin-bottom:2px}
+.who-chips{display:flex;flex-wrap:wrap;gap:6px}
+.who-chips label{position:relative}
+.who-chips input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.who-chips span{display:block;border:1px solid var(--line);border-radius:10px;padding:8px 16px;font-size:15px;background:var(--paper)}
+.who-chips input:checked+span{background:var(--matcha-soft);border-color:var(--matcha);color:var(--ink);font-weight:700}
+.who-chips input:focus-visible+span{outline:3px solid var(--matcha);outline-offset:2px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.field{display:grid;gap:4px;min-width:0}
+.field input{width:100%;font-size:16px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);min-width:0}
+.ferr{color:var(--shu);font-size:13px;margin:0}
+.hint{color:var(--ink-2);font-size:13px;margin:0}
+details.edit{border-top:1px solid var(--line);padding-top:10px}
+details.edit summary{cursor:pointer;font-size:13.5px;color:var(--ink-2)}
+details.edit .fgrid{margin-top:10px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:30;background:var(--ink);color:var(--paper);border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:12px;width:max-content;max-width:calc(100% - 32px);font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.toast button{border:1px solid var(--paper);background:transparent;color:var(--paper);border-radius:8px;padding:5px 10px;cursor:pointer;flex:none}
+@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <span class="seal" aria-hidden="true">茶</span>
+      <div><h1 id="appTitle">お茶会 会費集金</h1><p id="periodMemo">手渡しで受け取った会費・宴会費の記録</p></div>
+    </div>
+    <div class="subbar">
+      <nav class="tabs" id="periodTabs" aria-label="集金の期"></nav>
+      <div class="acct" id="acct" hidden><span id="acctName"></span><button type="button" id="signOutBtn">サインアウト</button></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="banner" class="banner" hidden></div>
+
+  <section class="gate" id="gate" aria-live="polite">
+    <h2>読み込んでいます…</h2>
+    <p>しばらくお待ちください。</p>
+  </section>
+
+  <div id="appView" hidden>
+    <section class="summary" aria-label="この期の集計">
+      <div class="sum-row">
+        <span class="lbl">受取済</span>
+        <span class="big num"><span id="sumPaid">—</span><span class="unit">円</span></span>
+        <span class="of">予定 <span class="num" id="sumDue">—</span>円</span>
+      </div>
+      <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
+      <div class="sum-sub">
+        <span>未収 <b class="num left-amt" id="sumLeft">—</b>円</span>
+        <span>受取 <b class="num" id="cntPaid">—</b> / <span class="num" id="cntDue">—</span> 人</span>
+      </div>
+      <details class="breakdown" id="breakdown">
+        <summary>項目ごと・幹事ごとの金額</summary>
+        <div class="bd-grid">
+          <div class="tbl-wrap"><table class="mini" id="itemTable"><caption>項目ごと（円）</caption></table></div>
+          <div class="tbl-wrap"><table class="mini" id="kanjiTable"><caption>受け取った幹事ごと（円）</caption></table></div>
+        </div>
+      </details>
+    </section>
+
+    <div class="tools">
+      <div class="seg" id="filterSeg" role="group" aria-label="表示する人">
+        <button type="button" data-f="unpaid" aria-pressed="false">未収</button>
+        <button type="button" data-f="paid" aria-pressed="false">受取済</button>
+        <button type="button" data-f="all" aria-pressed="true">すべて</button>
+      </div>
+      <input class="search" id="q" type="search" placeholder="名前で探す" aria-label="名前で探す" autocomplete="off">
+    </div>
+
+    <div id="list">
+      <div class="empty"><b>名簿を読み込んでいます…</b>部員ごとの請求額と受取の記録がここに並びます。</div>
+    </div>
+
+    <section class="history" aria-label="記録の履歴">
+      <h2>この期の記録の履歴</h2>
+      <ol class="log" id="logList"><li><span></span><span>まだ記録はありません。</span></li></ol>
+    </section>
+
+    <section class="foot">
+      <h2>Excel への反映</h2>
+      <button type="button" class="btn" id="csvBtn">この期の記録を CSV で保存</button>
+      <p>会費徴収表と同じ並び順で出力します。Excel でそのまま開けます。</p>
+    </section>
+  </div>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shName" hidden></section>
+<div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button type="button" id="toastBtn" hidden>取り消す</button></div>
+
+<script src="app.js"></script>
+<script type="module" src="firebase.js"></script>
+</body>
+</html>
