@@ -1,6 +1,6 @@
 // Firebase（Authentication と Firestore）を app.js につなぐ。
 // SDK は Google の配信元から読み込む。設定値は firebase-config.js。
-import { firebaseConfig } from "./firebase-config.js?v=20261112d";
+import { firebaseConfig } from "./firebase-config.js?v=20261113a";
 
 const SDK = "https://www.gstatic.com/firebasejs/10.12.2";
 const App = window.ShukinApp;
@@ -49,7 +49,9 @@ if (!firebaseConfig || !firebaseConfig.apiKey || !firebaseConfig.projectId) {
         const q = where ? fsM.query(ref, fsM.where(where[0], where[1], where[2])) : ref;
         return fsM.onSnapshot(q, opts, qs => next(qs.docs.map(wrap), { fromCache: qs.metadata.fromCache }), e => err(norm(e)));
       },
+      // data のキーに "sunshi.<id>" のような点区切りを使うと、その欄だけを書き換える
       update: (path, data) => fsM.updateDoc(fsM.doc(db, path), data).catch(e => { throw norm(e); }),
+      deleteField: () => fsM.deleteField(),
       add: (path, data) => fsM.addDoc(fsM.collection(db, path), data).catch(e => { throw norm(e); }),
       // ルールの確認回数の上限（まとめ書きは 1 回あたり 20 件まで）に当たらないよう、5 件ずつ送る
       importDocs: async (docs, onProgress) => {

@@ -91,6 +91,12 @@ main.wrap{padding-block:14px calc(120px + env(safe-area-inset-bottom,0px));displ
 .sum-sub{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:13.5px}
 .sum-sub b{font-weight:700}
 .left-amt{color:var(--shu)}
+.sum-parts{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;font-size:13.5px;color:var(--ink-2)}
+.sum-parts b{color:var(--ink);font-weight:700}
+.sum-parts a{color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.linkbtn{border:1px solid var(--matcha);background:transparent;color:var(--matcha);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;min-height:34px}
+.linkbtn:hover{background:var(--matcha-soft)}
+table.mini tr.sunrow td{color:var(--kin)}
 details.breakdown summary{cursor:pointer;font-size:13.5px;color:var(--matcha);list-style:none;padding:2px 0}
 details.breakdown summary::-webkit-details-marker{display:none}
 details.breakdown summary::before{content:"▸ ";display:inline-block;transition:transform .2s}
@@ -140,6 +146,16 @@ table.mini thead th{font-weight:400;color:var(--ink-2);font-size:12px}
 @keyframes pop{0%{transform:rotate(-12deg) scale(1.6);opacity:0}100%{transform:rotate(-12deg) scale(1);opacity:1}}
 .empty{background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:22px 18px;text-align:center;color:var(--ink-2);font-size:14px}
 .empty b{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+
+/* 寸志 */
+.sunshi{scroll-margin-top:120px}
+.sunshi>.btn{width:100%;border-color:var(--matcha);color:var(--matcha);font-weight:700}
+.sunshi>.hint{padding:0 2px}
+.row.sun{grid-template-columns:minmax(0,1fr) auto}
+.row.sun .amt .s{color:var(--kin)}
+.sun-empty{margin:0;padding:14px;font-size:13.5px;color:var(--ink-2)}
+.stamp.sun{border-color:var(--kin);color:var(--kin)}
+.paidbox.sun{background:var(--kin-soft)}
 
 /* 履歴・保存 */
 .history h2,.foot h2{font-size:14px;margin:6px 2px 6px;letter-spacing:.06em}
@@ -228,7 +244,11 @@ details.edit .fgrid{margin-top:10px}
       <div class="sum-row">
         <span class="lbl">受取済</span>
         <span class="big num"><span id="sumPaid">—</span><span class="unit">円</span></span>
-        <span class="of">予定 <span class="num" id="sumDue">—</span>円</span>
+        <span class="of">徴収予定 <span class="num" id="sumDue">—</span>円</span>
+      </div>
+      <div class="sum-parts">
+        <span>内訳　徴収 <b class="num" id="sumCol">—</b>円 ＋ <a href="#sunSec">寸志 <b class="num" id="sumSun">—</b>円</a></span>
+        <button type="button" class="linkbtn" id="sunAddTop">＋ 寸志を登録</button>
       </div>
       <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
       <div class="sum-sub">
@@ -257,6 +277,13 @@ details.edit .fgrid{margin-top:10px}
       <div class="empty"><b>名簿を読み込んでいます…</b>部員ごとの請求額と受取の記録がここに並びます。</div>
     </div>
 
+    <section class="group sunshi" id="sunSec" aria-labelledby="sunTitle">
+      <h2 id="sunTitle">寸志<span id="sunCount"></span></h2>
+      <div class="rows" id="sunList"><p class="sun-empty">読み込んでいます…</p></div>
+      <button type="button" class="btn" id="sunAddBtn">＋ 寸志を登録する</button>
+      <p class="hint">名前と金額を手で入れて登録します。受取済の金額に足し、徴収予定には含めません。</p>
+    </section>
+
     <section class="history" aria-label="記録の履歴">
       <h2>この期の記録の履歴</h2>
       <ol class="log" id="logList"><li><span></span><span>まだ記録はありません。</span></li></ol>
@@ -265,7 +292,7 @@ details.edit .fgrid{margin-top:10px}
     <section class="foot">
       <h2>Excel への反映</h2>
       <button type="button" class="btn" id="csvBtn">この期の記録を CSV で保存</button>
-      <p>会費徴収表と同じ並び順で出力します。Excel でそのまま開けます。</p>
+      <p>会費徴収表と同じ並び順で出力し、寸志は最後に「寸志」の区分で並べます。Excel でそのまま開けます。</p>
     </section>
   </div>
 </main>
@@ -274,7 +301,7 @@ details.edit .fgrid{margin-top:10px}
 <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shName" hidden></section>
 <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button type="button" id="toastBtn" hidden>取り消す</button></div>
 
-<script src="app.js?v=20261112d"></script>
-<script type="module" src="firebase.js?v=20261112d"></script>
+<script src="app.js?v=20261113a"></script>
+<script type="module" src="firebase.js?v=20261113a"></script>
 </body>
 </html>

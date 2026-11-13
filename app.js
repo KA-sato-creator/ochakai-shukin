@@ -21,7 +21,8 @@ window.ShukinApp = (() => {
     receiver: LS.get("shukin.receiver", ""),
     pending: new Set(), unsub: {}, lastStamp: null,
     gate: "loading", gateMsg: "", gateInfo: "", importDocs: null, importing: false, importDone: 0, loadTimer: null,
-    signing: false, whoami: LS.get("shukin.whoami", ""), choosingWho: false
+    signing: false, whoami: LS.get("shukin.whoami", ""), choosingWho: false,
+    sheet: "charge", sunBusy: false, sunWait: new Set()
   };
 
   function el(tag, attrs, ...kids) {
@@ -71,6 +72,15 @@ window.ShukinApp = (() => {
     else st = "none";
     return { due, rec, left: Math.max(due - rec, 0), over: Math.max(rec - due, 0), st };
   }
+  // 寸志：期のデータの sunshi（id → 名前・金額など）。徴収予定には含めず、受取済に足す
+  function sunList(p = curPeriod()) {
+    const m = (p && p.sunshi && typeof p.sunshi === "object") ? p.sunshi : {};
+    return Object.entries(m).filter(([, v]) => v && typeof v === "object")
+      .map(([id, v]) => Object.assign({}, v, { id }))
+      .sort((a, b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")) || a.id.localeCompare(b.id));
+  }
+  const sunTotal = list => list.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const newSunId = () => "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
   /* ---------- 入口（サインイン・権限・取り込み） ---------- */
   function setBanner(kind, text) {
@@ -307,8 +317,14 @@ window.ShukinApp = (() => {
       }
       if (r.rec > 0) { const k = (c.paid && c.paid.receiver) || ""; perKanji.set(k, (perKanji.get(k) || 0) + r.rec); }
     }
+    const sun = sunList(), sunSum = sunTotal(sun);
+    const perKanjiSun = new Map();
+    for (const x of sun) { const k = x.receiver || ""; perKanjiSun.set(k, (perKanjiSun.get(k) || 0) + (Number(x.amount) || 0)); }
     const ready = S.charges.length > 0;
-    $("#sumPaid").textContent = ready ? yen(rec) : "—";
+    // 受取済＝徴収額＋寸志。徴収予定・未収・進み具合の帯は徴収だけで数える
+    $("#sumPaid").textContent = ready ? yen(rec + sunSum) : "—";
+    $("#sumCol").textContent = ready ? yen(rec) : "—";
+    $("#sumSun").textContent = ready ? yen(sunSum) : "—";
     $("#sumDue").textContent = ready ? yen(due) : "—";
     $("#sumLeft").textContent = ready ? yen(left) : "—";
     $("#cntPaid").textContent = ready ? nPaid : "—";
@@ -318,12 +334,37 @@ window.ShukinApp = (() => {
     $("#itemTable").replaceChildren(el("caption", {}, "項目ごと（円）"),
       el("thead", {}, el("tr", {}, el("th", {}, "項目"), el("th", {}, "予定"), el("th", {}, "受取"), el("th", {}, "未収"))),
       el("tbody", {}, its.map(i => el("tr", {}, el("td", {}, i.label), el("td", { class: "num" }, yen(perItem[i.key].plan)), el("td", { class: "num" }, yen(perItem[i.key].got)), el("td", { class: "num" }, yen(perItem[i.key].plan - perItem[i.key].got)))),
-        el("tr", {}, el("th", {}, "合計"), el("th", { class: "num" }, yen(due)), el("th", { class: "num" }, yen(Math.min(rec, due))), el("th", { class: "num" }, yen(left)))));
-    const keys = [...kanjiList().map(k => k.key), ...[...perKanji.keys()].filter(k => !kanjiList().some(x => x.key === k))];
-    const trs = keys.filter(k => k !== "" || perKanji.has("")).map(k => el("tr", {}, el("td", {}, k ? kanjiName(k) : "幹事の記録なし"), el("td", { class: "num" }, yen(perKanji.get(k) || 0))));
+        el("tr", {}, el("th", {}, "徴収 計"), el("th", { class: "num" }, yen(due)), el("th", { class: "num" }, yen(Math.min(rec, due))), el("th", { class: "num" }, yen(left))),
+        el("tr", { class: "sunrow" }, el("td", {}, "寸志（予定外）"), el("td", { class: "num" }, "—"), el("td", { class: "num" }, yen(sunSum)), el("td", { class: "num" }, "—"))));
+    const known = new Set(kanjiList().map(k => k.key));
+    const keys = [...known];
+    for (const k of [...perKanji.keys(), ...perKanjiSun.keys()]) if (!known.has(k)) { known.add(k); keys.push(k); }
+    const trs = keys.filter(k => k !== "" || perKanji.has("") || perKanjiSun.has("")).map(k => {
+      const a = perKanji.get(k) || 0, b = perKanjiSun.get(k) || 0;
+      return el("tr", {}, el("td", {}, k ? kanjiName(k) : "幹事の記録なし"), el("td", { class: "num" }, yen(a)), el("td", { class: "num" }, yen(b)), el("td", { class: "num" }, yen(a + b)));
+    });
     $("#kanjiTable").replaceChildren(el("caption", {}, "受け取った幹事ごと（円）"),
-      el("thead", {}, el("tr", {}, el("th", {}, "幹事"), el("th", {}, "受取額"))),
-      el("tbody", {}, trs, el("tr", {}, el("th", {}, "合計"), el("th", { class: "num" }, yen(rec)))));
+      el("thead", {}, el("tr", {}, el("th", {}, "幹事"), el("th", {}, "徴収"), el("th", {}, "寸志"), el("th", {}, "計"))),
+      el("tbody", {}, trs, el("tr", {}, el("th", {}, "合計"), el("th", { class: "num" }, yen(rec)), el("th", { class: "num" }, yen(sunSum)), el("th", { class: "num" }, yen(rec + sunSum)))));
+  }
+
+  function renderSunshi() {
+    const box = $("#sunList");
+    const list = sunList(), sum = sunTotal(list);
+    $("#sunCount").textContent = list.length ? `${list.length} 件・計 ${yen(sum)}円` : "";
+    if (!list.length) {
+      box.replaceChildren(el("p", { class: "sun-empty" }, "まだ寸志の記録はありません。受け取ったら下の「寸志を登録する」から名前と金額を入れてください。"));
+      return;
+    }
+    box.replaceChildren(...list.map(x => {
+      const chips = [];
+      if (x.receiver) chips.push(el("span", { class: "chip" }, `受取 ${kanjiName(x.receiver)}`));
+      if (x.memo) chips.push(el("span", { class: "chip note" }, x.memo));
+      return el("button", { type: "button", class: "row sun", "data-sid": x.id, onclick: () => openSun(x.id) },
+        el("div", { class: "who" }, el("b", {}, x.name || "（名前なし）"), chips.length ? el("div", { class: "chips" }, chips) : null),
+        el("div", { class: "amt" }, el("span", { class: "v num" }, yen(x.amount)), el("span", { class: "s" }, `寸志 ${md(x.date)}`),
+          S.sunWait.has(x.id) ? el("span", { class: "wait" }, "送信待ち") : null));
+    }));
   }
 
   function chipsFor(c) {
@@ -417,25 +458,44 @@ window.ShukinApp = (() => {
 
   function renderAll() {
     if (S.gate !== "app") return;
-    renderHeader(); renderSummary(); renderList();
+    renderHeader(); renderSummary(); renderList(); renderSunshi();
     if (S.openId) renderSheet();
   }
 
   /* ---------- 記録シート ---------- */
-  function openSheet(id) {
+  function openSheet(id, kind = "charge") {
+    S.sheet = kind;
     S.openId = id; S.openPid = S.pid; S.editPaid = false; S.confirmCancel = false; S.formErr = "";
     $("#scrim").hidden = false; $("#sheet").hidden = false;
+    $("#sheet").replaceChildren();
     renderSheet();
-    const f = $("#sheet .x"); if (f) f.focus();
+    const f = (kind === "sun" && id === "new") ? $("#sName") : $("#sheet .x"); if (f) f.focus();
   }
+  // 寸志のシート：id は登録済みの寸志、"new" は新しく登録
+  const openSun = id => openSheet(id, "sun");
   function closeSheet() {
-    const id = S.openId;
+    const id = S.openId, kind = S.sheet;
     S.openId = null; $("#sheet").hidden = true; $("#scrim").hidden = true; $("#sheet").replaceChildren();
-    if (id) { const r = document.querySelector(`.row[data-id="${CSS.escape(id)}"]`); if (r) r.focus(); }
+    if (!id) return;
+    const r = kind === "sun"
+      ? (document.querySelector(`.row[data-sid="${CSS.escape(id)}"]`) || $("#sunAddBtn"))
+      : document.querySelector(`.row[data-id="${CSS.escape(id)}"]`);
+    if (r) r.focus({ preventScroll: true });
   }
   const openCharge = () => (S.openPid === S.pid) ? S.charges.find(c => c.id === S.openId) : null;
 
+  // 受け取った幹事の選択。新しく記録するときは、選んだ幹事を次の初期値として覚える
+  function recvChips(recv) {
+    const list = kanjiList();
+    return list.length
+      ? el("div", { class: "who-chips" }, list.map(k => el("label", {},
+          el("input", { type: "radio", name: "recv", value: k.key, "aria-label": k.name, checked: recv === k.key, onchange: () => { if (!S.editPaid) { S.receiver = k.key; LS.set("shukin.receiver", k.key); } } }),
+          el("span", {}, k.name))))
+      : el("p", { class: "hint" }, "幹事の一覧が登録されていません。会計担当に頼んでください。");
+  }
+
   function renderSheet() {
+    if (S.sheet === "sun") { renderSunSheet(); return; }
     const sh = $("#sheet");
     const c = openCharge();
     if (!c) { closeSheet(); return; }
@@ -505,12 +565,7 @@ window.ShukinApp = (() => {
           : `受取額を ${yen(v || 0)}円 に直す`;
       };
       amtIn.addEventListener("input", label); label();
-      const list = kanjiList();
-      const chips = list.length
-        ? el("div", { class: "who-chips" }, list.map(k => el("label", {},
-            el("input", { type: "radio", name: "recv", value: k.key, "aria-label": k.name, checked: recv === k.key, onchange: () => { if (!S.editPaid) { S.receiver = k.key; LS.set("shukin.receiver", k.key); } } }),
-            el("span", {}, k.name))))
-        : el("p", { class: "hint" }, "幹事の一覧が登録されていません。会計担当に頼んでください。");
+      const chips = recvChips(recv);
       kids.push(el("form", { class: "rec", novalidate: true, onsubmit: ev => { ev.preventDefault(); savePayment(); } },
         el("fieldset", {}, el("legend", {}, "受け取った幹事"), chips),
         el("div", { class: "fgrid" },
@@ -533,6 +588,76 @@ window.ShukinApp = (() => {
       el("div", { class: "rowbtns", style: "margin-top:10px" }, el("button", { type: "button", class: "btn", disabled: busy, onclick: saveBill }, "請求額を保存")));
     if (editOpen) edit.open = true;
     kids.push(edit);
+    sh.replaceChildren(...kids);
+    if (focusId) { const f = document.getElementById(focusId); if (f) f.focus({ preventScroll: true }); }
+  }
+
+  const openSunEntry = () => (S.openPid === S.pid && S.openId !== "new") ? (sunList().find(x => x.id === S.openId) || null) : null;
+
+  function renderSunSheet() {
+    const sh = $("#sheet");
+    const p = S.openPid === S.pid ? curPeriod() : null;
+    const isNew = S.openId === "new";
+    const x = openSunEntry();
+    if (!p || (!isNew && !x)) { closeSheet(); return; }
+    const keep = {};
+    for (const id of ["sName", "sAmt", "sDate", "sMemo"]) { const n = document.getElementById(id); if (n) keep[id] = n.value; }
+    const rv = sh.querySelector('input[name="recv"]:checked'); if (rv) keep.recv = rv.value;
+    const focusId = document.activeElement && sh.contains(document.activeElement) ? document.activeElement.id : "";
+    const busy = S.sunBusy;
+    const kids = [];
+    kids.push(el("div", { class: "sh-head" },
+      el("div", {}, el("p", {}, `${p.label || ""}　寸志`), el("h2", { id: "shName" }, isNew ? "寸志を登録" : (x.name || "（名前なし）"))),
+      el("button", { type: "button", class: "x", "aria-label": "閉じる", onclick: closeSheet }, "×")));
+
+    if (x) {
+      kids.push(el("div", { class: "paidbox sun" },
+        el("span", { class: "stamp big sun", "aria-hidden": "true" }, "志"),
+        el("div", {},
+          el("b", { class: "num" }, `寸志 ${yen(x.amount)}円`),
+          el("p", {}, [md(x.date), x.receiver ? `受取 ${kanjiName(x.receiver)}` : "受け取った幹事の記録なし"].filter(Boolean).join(" · ")),
+          x.memo ? el("p", {}, `メモ：${x.memo}`) : null,
+          el("p", { class: "by" }, x.recordedAt ? `記録 ${x.recordedByName ? x.recordedByName + "　" : ""}${hm(x.recordedAt)}` : ""))));
+      if (S.confirmCancel) {
+        kids.push(el("div", { class: "confirm" },
+          el("span", {}, `「${x.name}」の寸志 ${yen(x.amount)}円 の記録を消します。`),
+          el("div", { class: "rowbtns" },
+            el("button", { type: "button", class: "btn danger solid", disabled: busy, onclick: cancelSun }, "寸志を取り消す"),
+            el("button", { type: "button", class: "btn", onclick: () => { S.confirmCancel = false; renderSheet(); } }, "やめる"))));
+      } else if (!S.editPaid) {
+        kids.push(el("div", { class: "rowbtns" },
+          el("button", { type: "button", class: "btn", onclick: () => { S.editPaid = true; S.formErr = ""; renderSheet(); } }, "記録を直す"),
+          el("button", { type: "button", class: "btn danger", onclick: () => { S.confirmCancel = true; renderSheet(); } }, "寸志を取り消す")));
+      }
+    }
+
+    if (isNew || S.editPaid) {
+      const v = (k, d) => keep[k] != null ? keep[k] : d;
+      const recv = keep.recv != null ? keep.recv : (x && x.receiver ? x.receiver : S.receiver);
+      const names = [...new Set(S.charges.map(c => c.name).filter(Boolean))];
+      const nameIn = el("input", { id: "sName", type: "text", maxlength: "40", list: "sunNames", autocomplete: "off", placeholder: "例：○○部長", value: v("sName", x ? (x.name || "") : "") });
+      const amtIn = el("input", { id: "sAmt", type: "number", inputmode: "numeric", min: "0", step: "100", placeholder: "例：10000", value: v("sAmt", x ? String(Number(x.amount) || "") : "") });
+      const dateIn = el("input", { id: "sDate", type: "date", value: v("sDate", x && x.date ? x.date : today()) });
+      const memoIn = el("input", { id: "sMemo", type: "text", maxlength: "200", placeholder: "例：忘年会あて", value: v("sMemo", x ? (x.memo || "") : "") });
+      const save = el("button", { type: "submit", class: "btn primary", disabled: busy }, "");
+      const label = () => {
+        const n = parseInt(amtIn.value, 10);
+        save.textContent = busy ? "記録しています…" : isNew ? `寸志 ${yen(n || 0)}円 を登録` : `寸志を ${yen(n || 0)}円 に直す`;
+      };
+      amtIn.addEventListener("input", label); label();
+      kids.push(el("form", { class: "rec", novalidate: true, onsubmit: ev => { ev.preventDefault(); saveSun(); } },
+        el("label", { class: "field" }, el("span", { class: "flabel" }, "名前"), nameIn),
+        el("datalist", { id: "sunNames" }, names.map(n => el("option", { value: n }))),
+        el("div", { class: "fgrid" },
+          el("label", { class: "field" }, el("span", { class: "flabel" }, "金額（円）"), amtIn),
+          el("label", { class: "field" }, el("span", { class: "flabel" }, "受取日"), dateIn)),
+        el("fieldset", {}, el("legend", {}, "受け取った幹事"), recvChips(recv)),
+        el("label", { class: "field" }, el("span", { class: "flabel" }, "メモ（任意）"), memoIn),
+        isNew ? el("p", { class: "hint" }, "寸志は受取済の金額に足します。徴収予定の金額には含めません。") : null,
+        S.formErr ? el("p", { class: "ferr", role: "alert" }, S.formErr) : null,
+        save,
+        S.editPaid ? el("button", { type: "button", class: "btn", onclick: () => { S.editPaid = false; S.formErr = ""; renderSheet(); } }, "直さずに戻る") : null));
+    }
     sh.replaceChildren(...kids);
     if (focusId) { const f = document.getElementById(focusId); if (f) f.focus({ preventScroll: true }); }
   }
@@ -647,6 +772,83 @@ window.ShukinApp = (() => {
     toast(res === "queued" ? queuedMsg(c.name) : `${c.name} さんの請求額を ${yen(sum)}円 にしました`);
   }
 
+  /* ---------- 寸志の書き込み ---------- */
+  // 期のデータの sunshi.<id> だけを書き換える（entry が null なら消す）。ほかの寸志や名簿には触れない
+  async function writeSun(pid, id, entry) {
+    if (!S.A) throw { code: "unavailable" };
+    if (S.sunBusy) throw { code: "busy" };
+    if (entry === null && !S.A.deleteField) throw { code: "unavailable" };
+    S.sunBusy = true; S.sunWait.add(id);
+    if (S.openId) renderSheet();
+    const p = Promise.resolve().then(() => S.A.update(`periods/${pid}`, { [`sunshi.${id}`]: entry === null ? S.A.deleteField() : entry }));
+    p.then(() => { S.sunWait.delete(id); if (S.gate === "app") renderSunshi(); }, () => { S.sunWait.delete(id); if (S.gate === "app") renderSunshi(); });
+    try {
+      const res = await Promise.race([p.then(() => "ok"), sleep(5000).then(() => "slow")]);
+      if (res === "slow") { p.catch(e => toast(failMsg(e))); return "queued"; }
+      return "ok";
+    } finally {
+      S.sunBusy = false;
+      if (S.openId) renderSheet();
+    }
+  }
+  const sunCopy = x => ({
+    name: x.name || "", amount: Number(x.amount) || 0, date: x.date || "", receiver: x.receiver || "", memo: x.memo || "",
+    createdAt: x.createdAt || null, recordedAt: x.recordedAt || null, recordedBy: x.recordedBy || null, recordedByName: x.recordedByName || null
+  });
+  const sunQueuedMsg = name => `「${name}」の寸志は送信待ちです。つながると自動で送ります。ページは開いたままにしてください`;
+
+  async function saveSun() {
+    const pid = S.openPid;
+    const isNew = S.openId === "new";
+    const prev = isNew ? null : openSunEntry();
+    if (!isNew && !prev) { closeSheet(); return; }
+    const name = String(($("#sName") || {}).value || "").trim().replace(/\s+/g, " ").slice(0, 40);
+    const amt = parseInt(($("#sAmt") || {}).value, 10);
+    const recvEl = document.querySelector('#sheet input[name="recv"]:checked');
+    const recv = recvEl ? recvEl.value : "";
+    const date = ($("#sDate") || {}).value || today();
+    const memo = String(($("#sMemo") || {}).value || "").trim().slice(0, 200);
+    if (!name) { S.formErr = "寸志をくださった方の名前を入れてください。"; renderSheet(); return; }
+    if (!(amt > 0)) { S.formErr = "金額を 1円以上で入れてください。"; renderSheet(); return; }
+    if (!recv) { S.formErr = "受け取った幹事を選んでください。"; renderSheet(); return; }
+    S.formErr = "";
+    const id = isNew ? newSunId() : prev.id;
+    const w = who(), now = new Date().toISOString();
+    const entry = { name, amount: amt, date, receiver: recv, memo, createdAt: isNew ? now : (prev.createdAt || now), recordedAt: now, recordedBy: w.uid, recordedByName: w.name };
+    let res;
+    try { res = await writeSun(pid, id, entry); }
+    catch (e) { S.formErr = failMsg(e) + "。"; if (S.openId) renderSheet(); return; }
+    addLog(pid, { member: "sunshi:" + id, name, action: isNew ? "寸志を受取" : "寸志を修正", amount: amt, receiver: recv, date });
+    closeSheet();
+    renderSunshi();
+    const before = prev ? sunCopy(prev) : null;
+    toast(res === "queued" ? sunQueuedMsg(name) : `「${name}」の寸志 ${yen(amt)}円 を${isNew ? "登録" : "直"}しました`, async () => {
+      try {
+        await writeSun(pid, id, before);
+        addLog(pid, { member: "sunshi:" + id, name, action: "元に戻す", amount: before ? before.amount : 0, receiver: before ? before.receiver : "", date: before ? before.date : "" });
+        toast(isNew ? "寸志の登録を取り消しました" : "寸志の記録を元に戻しました");
+      } catch (e) { toast(failMsg(e)); }
+    });
+  }
+
+  async function cancelSun() {
+    const pid = S.openPid;
+    const x = openSunEntry(); if (!x) { closeSheet(); return; }
+    const before = sunCopy(x);
+    let res;
+    try { res = await writeSun(pid, x.id, null); }
+    catch (e) { toast(failMsg(e)); return; }
+    addLog(pid, { member: "sunshi:" + x.id, name: x.name, action: "寸志を取消", amount: before.amount, receiver: before.receiver, date: before.date });
+    closeSheet();
+    toast(res === "queued" ? sunQueuedMsg(x.name) : `「${x.name}」の寸志の記録を取り消しました`, async () => {
+      try {
+        await writeSun(pid, x.id, before);
+        addLog(pid, { member: "sunshi:" + x.id, name: x.name, action: "元に戻す", amount: before.amount, receiver: before.receiver, date: before.date });
+        toast("寸志の記録を元に戻しました");
+      } catch (e) { toast(failMsg(e)); }
+    });
+  }
+
   /* ---------- トースト ---------- */
   let toastTimer = null;
   function toast(msg, undo) {
@@ -669,6 +871,10 @@ window.ShukinApp = (() => {
       const r = calc(c), pd = c.paid || {};
       return [c.no != null ? c.no : "", c.group || "", c.name || "", ...its.map(i => Number(c.amounts && c.amounts[i.key]) || 0), r.due, r.rec, r.left, ST_LABEL[r.st], pd.date ? String(pd.date).replace(/-/g, "/") : "", kanjiName(pd.receiver), c.note || "", pd.memo || ""];
     });
+    // 寸志は名簿の後ろに「寸志」の区分で並べる（請求額・未収は空欄）
+    for (const x of sunList(p)) {
+      rows.push(["", "寸志", x.name || "", ...its.map(() => ""), "", Number(x.amount) || 0, "", "寸志", x.date ? String(x.date).replace(/-/g, "/") : "", kanjiName(x.receiver), "", x.memo || ""]);
+    }
     const cell = v => { const s = String(v == null ? "" : v); return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const csv = "﻿" + [head, ...rows].map(r => r.map(cell).join(",")).join("\r\n") + "\r\n";
     const name = `${p.label || p.id}_集金記録_${today().replace(/-/g, "")}.csv`;
@@ -768,6 +974,8 @@ window.ShukinApp = (() => {
   $("#scrim").addEventListener("click", closeSheet);
   document.addEventListener("keydown", e => { if (e.key === "Escape" && S.openId) closeSheet(); });
   $("#csvBtn").addEventListener("click", exportCsv);
+  $("#sunAddBtn").addEventListener("click", () => { if (S.gate === "app" && curPeriod()) openSun("new"); });
+  $("#sunAddTop").addEventListener("click", () => { if (S.gate === "app" && curPeriod()) openSun("new"); });
   $("#signOutBtn").addEventListener("click", () => { if (S.A) Promise.resolve(S.A.signOut()).catch(() => {}); });
   $("#whoBtn").addEventListener("click", () => { if (!isShared()) return; S.choosingWho = true; showGate("whoami"); });
   setTimeout(() => { if (!S.started) loadFailed("15 秒待っても部品が届きませんでした。"); }, 15000);
